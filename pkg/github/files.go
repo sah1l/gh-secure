@@ -69,6 +69,73 @@ func (c *Client) DeleteFile(path, message, sha string) error {
 	return c.Delete(c.RepoPath("contents", path), body)
 }
 
+// CreateOrUpdateFileOnBranch creates or updates a file on a specific branch.
+func (c *Client) CreateOrUpdateFileOnBranch(path, message, content, branch string) error {
+	encoded := base64.StdEncoding.EncodeToString([]byte(content))
+
+	body := map[string]interface{}{
+		"message": message,
+		"content": encoded,
+		"branch":  branch,
+	}
+
+	// Check if file exists on that branch to get SHA for update
+	existing, err := c.GetFile(path)
+	if err != nil {
+		return err
+	}
+	if existing.Exists {
+		body["sha"] = existing.SHA
+	}
+
+	return c.Put(c.RepoPath("contents", path), body, nil)
+}
+
+// GetBranchSHA returns the latest commit SHA of a branch.
+func (c *Client) GetBranchSHA(branch string) (string, error) {
+	var resp struct {
+		Object struct {
+			SHA string `json:"sha"`
+		} `json:"object"`
+	}
+	err := c.Get(c.RepoPath("git", "ref", "heads", branch), &resp)
+	if err != nil {
+		return "", fmt.Errorf("failed to get branch SHA for %s: %w", branch, err)
+	}
+	return resp.Object.SHA, nil
+}
+
+// CreateBranch creates a new branch from the given SHA.
+func (c *Client) CreateBranch(name, sha string) error {
+	body := map[string]interface{}{
+		"ref": "refs/heads/" + name,
+		"sha": sha,
+	}
+	return c.Post(c.RepoPath("git", "refs"), body, nil)
+}
+
+// PullRequest represents a GitHub pull request.
+type PullRequest struct {
+	Number  int    `json:"number"`
+	HTMLURL string `json:"html_url"`
+}
+
+// CreatePullRequest creates a PR from head into base.
+func (c *Client) CreatePullRequest(title, body, head, base string) (*PullRequest, error) {
+	payload := map[string]interface{}{
+		"title": title,
+		"body":  body,
+		"head":  head,
+		"base":  base,
+	}
+	var pr PullRequest
+	err := c.Post(c.RepoPath("pulls"), payload, &pr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create pull request: %w", err)
+	}
+	return &pr, nil
+}
+
 // DetectEcosystems checks for common package manager files and returns detected ecosystems.
 func (c *Client) DetectEcosystems() ([]string, error) {
 	indicators := map[string]string{

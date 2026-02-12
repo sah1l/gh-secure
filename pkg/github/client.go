@@ -88,3 +88,52 @@ func (c *Client) RepoPath(parts ...string) string {
 	}
 	return base
 }
+
+// CurrentState bundles all current repo state for idempotent operations.
+type CurrentState struct {
+	Settings   *RepoSettings
+	Security   *SecuritySettings
+	Protection *BranchProtection
+	Rulesets   []Ruleset
+	Files      map[string]bool // path → exists
+}
+
+// GetCurrentState fetches all repo state in one call.
+func (c *Client) GetCurrentState() (*CurrentState, error) {
+	state := &CurrentState{
+		Files: make(map[string]bool),
+	}
+
+	settings, err := c.GetRepoSettings()
+	if err != nil {
+		return nil, fmt.Errorf("fetching repo settings: %w", err)
+	}
+	state.Settings = settings
+
+	security, err := c.GetSecuritySettings()
+	if err != nil {
+		return nil, fmt.Errorf("fetching security settings: %w", err)
+	}
+	state.Security = security
+
+	if c.SupportsRulesets() {
+		rulesets, err := c.ListRulesets()
+		if err == nil {
+			state.Rulesets = rulesets
+		}
+	} else {
+		bp, err := c.GetBranchProtection(settings.DefaultBranch)
+		if err == nil {
+			state.Protection = bp
+		}
+	}
+
+	for _, path := range []string{"LICENSE", "CONTRIBUTING.md", "SECURITY.md", "CODE_OF_CONDUCT.md", ".github/dependabot.yml", "CODEOWNERS", ".github/CODEOWNERS"} {
+		f, err := c.GetFile(path)
+		if err == nil {
+			state.Files[path] = f.Exists
+		}
+	}
+
+	return state, nil
+}

@@ -42,10 +42,10 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("\n%s %s\n\n", bold.Render("Configuring"), repoName)
 
-	// Get current settings
-	settings, err := client.GetRepoSettings()
+	// Get current state (settings, security, rulesets, files)
+	current, err := client.GetCurrentState()
 	if err != nil {
-		return fmt.Errorf("fetching repo settings: %w", err)
+		return err
 	}
 
 	var cfg *config.Config
@@ -58,7 +58,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		cfg = &preset
 		fmt.Printf("Using preset: %s\n\n", bold.Render(initPreset))
 	} else {
-		cfg, err = wizard.RunWizard()
+		cfg, err = wizard.RunWizard(current)
 		if err != nil {
 			return fmt.Errorf("wizard cancelled: %w", err)
 		}
@@ -66,7 +66,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 	// Show summary and confirm
 	fmt.Println()
-	renderConfigSummary(cfg)
+	renderConfigSummary(cfg, current.Settings.DefaultBranch)
 
 	var confirm bool
 	confirmForm := huh.NewForm(
@@ -87,10 +87,10 @@ func runInit(cmd *cobra.Command, args []string) error {
 	fmt.Println()
 
 	// Apply settings
-	return applyConfig(client, cfg, settings)
+	return applyConfig(client, cfg, current)
 }
 
-func renderConfigSummary(cfg *config.Config) {
+func renderConfigSummary(cfg *config.Config, defaultBranch string) {
 	bold := lipgloss.NewStyle().Bold(true)
 	dim := lipgloss.NewStyle().Faint(true)
 
@@ -123,9 +123,20 @@ func renderConfigSummary(cfg *config.Config) {
 	if len(cfg.Rulesets) > 0 {
 		fmt.Printf("\n  %s\n", bold.Render("Rulesets"))
 		for _, rs := range cfg.Rulesets {
-			fmt.Printf("    %s → %s\n", rs.Name, strings.Join(rs.Branches, ", "))
+			branches := make([]string, len(rs.Branches))
+			for i, b := range rs.Branches {
+				if b == "~DEFAULT_BRANCH~" {
+					branches[i] = defaultBranch
+				} else {
+					branches[i] = b
+				}
+			}
+			fmt.Printf("    %s → %s\n", rs.Name, strings.Join(branches, ", "))
 			if rs.RequiredReviews > 0 {
 				fmt.Printf("      Reviews: %d\n", rs.RequiredReviews)
+			}
+			if rs.AdminBypass {
+				fmt.Printf("      Admin bypass: yes\n")
 			}
 		}
 	}
@@ -154,37 +165,63 @@ func renderConfigSummary(cfg *config.Config) {
 	fmt.Println()
 }
 
-func applyConfig(client *gh.Client, cfg *config.Config, current *gh.RepoSettings) error {
+func findRulesetByName(rulesets []gh.Ruleset, name string) *gh.Ruleset {
+	for i := range rulesets {
+		if rulesets[i].Name == name {
+			return &rulesets[i]
+		}
+	}
+	return nil
+}
+
+func applyConfig(client *gh.Client, cfg *config.Config, current *gh.CurrentState) error {
 	green := lipgloss.NewStyle().Foreground(lipgloss.Color("2"))
 	red := lipgloss.NewStyle().Foreground(lipgloss.Color("1"))
+	dim := lipgloss.NewStyle().Faint(true)
 	ok := func(msg string) { fmt.Printf("  %s %s\n", green.Render("✓"), msg) }
 	fail := func(msg string, err error) { fmt.Printf("  %s %s: %s\n", red.Render("✗"), msg, err) }
+	skip := func(msg string) { fmt.Printf("  %s %s\n", dim.Render("·"), msg) }
+
+	settings := current.Settings
+	security := current.Security
 
 	// 1. Visibility
-	if cfg.Visibility != "" && cfg.Visibility != current.Visibility {
+	if cfg.Visibility != "" && cfg.Visibility != settings.Visibility {
 		if err := client.SetVisibility(cfg.Visibility); err != nil {
 			fail("Set visibility", err)
 		} else {
 			ok("Set visibility to " + cfg.Visibility)
 		}
+	} else if cfg.Visibility != "" {
+		skip("Visibility already " + settings.Visibility)
 	}
 
 	// 2. Merge strategies
-	if err := client.SetMergeStrategies(cfg.MergeStrategy.AllowSquash, cfg.MergeStrategy.AllowMerge, cfg.MergeStrategy.AllowRebase); err != nil {
-		fail("Set merge strategies", err)
+	if cfg.MergeStrategy.AllowSquash == settings.AllowSquashMerge &&
+		cfg.MergeStrategy.AllowMerge == settings.AllowMergeCommit &&
+		cfg.MergeStrategy.AllowRebase == settings.AllowRebaseMerge {
+		skip("Merge strategies already configured")
 	} else {
-		ok("Configured merge strategies")
+		if err := client.SetMergeStrategies(cfg.MergeStrategy.AllowSquash, cfg.MergeStrategy.AllowMerge, cfg.MergeStrategy.AllowRebase); err != nil {
+			fail("Set merge strategies", err)
+		} else {
+			ok("Configured merge strategies")
+		}
 	}
 
 	// 3. Delete branch on merge
-	if err := client.SetDeleteBranchOnMerge(cfg.DeleteBranchOnMerge); err != nil {
-		fail("Set delete branch on merge", err)
+	if cfg.DeleteBranchOnMerge == settings.DeleteBranchOnMerge {
+		skip("Delete branch on merge already configured")
 	} else {
-		ok("Set delete branch on merge")
+		if err := client.SetDeleteBranchOnMerge(cfg.DeleteBranchOnMerge); err != nil {
+			fail("Set delete branch on merge", err)
+		} else {
+			ok("Set delete branch on merge")
+		}
 	}
 
 	// 4. Rulesets or branch protection
-	defaultBranch := current.DefaultBranch
+	defaultBranch := settings.DefaultBranch
 	if len(cfg.Rulesets) > 0 {
 		useRulesets := client.SupportsRulesets()
 		if useRulesets {
@@ -196,19 +233,37 @@ func applyConfig(client *gh.Client, cfg *config.Config, current *gh.RepoSettings
 					}
 				}
 
-				rs := gh.BuildProtectionRuleset(
-					rsCfg.Name,
-					branches[0],
-					rsCfg.RequiredReviews,
-					rsCfg.DismissStaleReviews,
-					rsCfg.RequireCodeOwners,
-					rsCfg.RequireLinearHistory,
-					rsCfg.RequireSignedCommits,
-				)
-				if err := client.CreateRuleset(rs); err != nil {
-					fail("Create ruleset "+rsCfg.Name, err)
+				opts := gh.RulesetOptions{
+					Name:                rsCfg.Name,
+					Branch:              branches[0],
+					Reviews:             rsCfg.RequiredReviews,
+					DismissStale:        rsCfg.DismissStaleReviews,
+					CodeOwners:          rsCfg.RequireCodeOwners,
+					LinearHistory:       rsCfg.RequireLinearHistory,
+					SignedCommits:       rsCfg.RequireSignedCommits,
+					AllowedMergeMethods: rsCfg.AllowedMergeMethods,
+				}
+				if rsCfg.AdminBypass {
+					opts.BypassActors = []gh.BypassActor{
+						{ActorID: 5, ActorType: "RepositoryRole", BypassMode: "always"},
+					}
+				}
+				rs := gh.BuildProtectionRuleset(opts)
+
+				existing := findRulesetByName(current.Rulesets, rsCfg.Name)
+				if existing != nil {
+					// Update existing ruleset (PUT is idempotent)
+					if err := client.UpdateRuleset(existing.ID, rs); err != nil {
+						fail("Update ruleset "+rsCfg.Name, err)
+					} else {
+						ok("Updated ruleset: " + rsCfg.Name)
+					}
 				} else {
-					ok("Created ruleset: " + rsCfg.Name)
+					if err := client.CreateRuleset(rs); err != nil {
+						fail("Create ruleset "+rsCfg.Name, err)
+					} else {
+						ok("Created ruleset: " + rsCfg.Name)
+					}
 				}
 			}
 		} else {
@@ -259,57 +314,95 @@ func applyConfig(client *gh.Client, cfg *config.Config, current *gh.RepoSettings
 
 	// 5. Security features
 	if cfg.Security.VulnerabilityAlerts {
-		if err := client.EnableVulnerabilityAlerts(); err != nil {
-			fail("Enable vulnerability alerts", err)
+		if security.VulnerabilityAlerts {
+			skip("Vulnerability alerts already enabled")
 		} else {
-			ok("Enabled vulnerability alerts")
+			if err := client.EnableVulnerabilityAlerts(); err != nil {
+				fail("Enable vulnerability alerts", err)
+			} else {
+				ok("Enabled vulnerability alerts")
+			}
 		}
 	}
 
 	if cfg.Security.AutomatedSecurityFixes {
-		if err := client.EnableAutoSecurityFixes(); err != nil {
-			fail("Enable automated security fixes", err)
+		if security.AutomatedSecurityFixes {
+			skip("Automated security fixes already enabled")
 		} else {
-			ok("Enabled automated security fixes")
+			if err := client.EnableAutoSecurityFixes(); err != nil {
+				fail("Enable automated security fixes", err)
+			} else {
+				ok("Enabled automated security fixes")
+			}
 		}
 	}
 
 	if cfg.Security.SecretScanning {
-		if err := client.SetSecretScanning(true); err != nil {
-			fail("Enable secret scanning", err)
+		if security.SecretScanning {
+			skip("Secret scanning already enabled")
 		} else {
-			ok("Enabled secret scanning")
+			if err := client.SetSecretScanning(true); err != nil {
+				fail("Enable secret scanning", err)
+			} else {
+				ok("Enabled secret scanning")
+			}
 		}
 	}
 
 	if cfg.Security.SecretScanningPushProt {
-		if err := client.SetSecretScanningPushProtection(true); err != nil {
-			fail("Enable secret scanning push protection", err)
+		if security.SecretScanningPushProt {
+			skip("Secret scanning push protection already enabled")
 		} else {
-			ok("Enabled secret scanning push protection")
+			if err := client.SetSecretScanningPushProtection(true); err != nil {
+				fail("Enable secret scanning push protection", err)
+			} else {
+				ok("Enabled secret scanning push protection")
+			}
 		}
 	}
 
-	// 6. Dependabot config
-	if cfg.Security.DependabotConfig {
-		ecosystems, _ := client.DetectEcosystems()
-		var content string
-		if len(ecosystems) > 0 {
-			content = templates.Dependabot(ecosystems)
-		} else {
-			content = templates.DefaultDependabot()
-		}
-		if err := client.CreateOrUpdateFile(".github/dependabot.yml", "chore: configure Dependabot", content); err != nil {
-			fail("Create dependabot.yml", err)
-		} else {
-			ok("Created .github/dependabot.yml")
-		}
+	// 6-8. File creation (dependabot, community files, license)
+	// Collect all files to create, then decide: push directly or create PR.
+	type pendingFile struct {
+		Path    string
+		Message string
+		Content string
 	}
+	var pendingFiles []pendingFile
 
-	// 7. Community files
 	owner := client.Owner()
 	repoName := client.RepoName()
+
+	// Dependabot config
+	if cfg.Security.DependabotConfig {
+		if current.Files[".github/dependabot.yml"] {
+			skip("dependabot.yml already exists")
+		} else {
+			ecosystems, _ := client.DetectEcosystems()
+			var content string
+			if len(ecosystems) > 0 {
+				content = templates.Dependabot(ecosystems)
+			} else {
+				content = templates.DefaultDependabot()
+			}
+			pendingFiles = append(pendingFiles, pendingFile{
+				Path:    ".github/dependabot.yml",
+				Message: "chore: configure Dependabot",
+				Content: content,
+			})
+		}
+	}
+
+	// Community files
 	for _, f := range cfg.Files {
+		if f == "CODEOWNERS" && (current.Files["CODEOWNERS"] || current.Files[".github/CODEOWNERS"]) {
+			skip("CODEOWNERS already exists")
+			continue
+		}
+		if current.Files[f] {
+			skip(f + " already exists")
+			continue
+		}
 		var content string
 		switch f {
 		case "CONTRIBUTING.md":
@@ -318,25 +411,85 @@ func applyConfig(client *gh.Client, cfg *config.Config, current *gh.RepoSettings
 			content = templates.Security(repoName, owner)
 		case "CODE_OF_CONDUCT.md":
 			content = templates.CodeOfConduct(repoName, owner)
+		case "CODEOWNERS":
+			content = templates.Codeowners(owner)
 		default:
 			continue
 		}
-		if err := client.CreateOrUpdateFile(f, "docs: add "+f, content); err != nil {
-			fail("Create "+f, err)
-		} else {
-			ok("Created " + f)
-		}
+		pendingFiles = append(pendingFiles, pendingFile{
+			Path:    f,
+			Message: "docs: add " + f,
+			Content: content,
+		})
 	}
 
-	// 8. License (if specified and not existing)
-	if cfg.License != "" && current.License == nil {
+	// License
+	if cfg.License != "" && settings.License == nil {
 		licenseContent := getLicenseContent(cfg.License, owner)
 		if licenseContent != "" {
-			if err := client.CreateOrUpdateFile("LICENSE", "docs: add LICENSE", licenseContent); err != nil {
-				fail("Create LICENSE", err)
-			} else {
-				ok("Created LICENSE (" + cfg.License + ")")
+			pendingFiles = append(pendingFiles, pendingFile{
+				Path:    "LICENSE",
+				Message: "docs: add LICENSE (" + cfg.License + ")",
+				Content: licenseContent,
+			})
+		}
+	} else if cfg.License != "" {
+		skip("LICENSE already exists")
+	}
+
+	// Try to push files directly. If we hit a 409 (rule violation), fall back to a PR.
+	if len(pendingFiles) > 0 {
+		// Try the first file to see if direct push works
+		firstErr := client.CreateOrUpdateFile(pendingFiles[0].Path, pendingFiles[0].Message, pendingFiles[0].Content)
+		if firstErr == nil {
+			// Direct push works — continue with the rest
+			ok("Created " + pendingFiles[0].Path)
+			for _, pf := range pendingFiles[1:] {
+				if err := client.CreateOrUpdateFile(pf.Path, pf.Message, pf.Content); err != nil {
+					fail("Create "+pf.Path, err)
+				} else {
+					ok("Created " + pf.Path)
+				}
 			}
+		} else if gh.IsRuleViolation(firstErr) {
+			// Branch protection blocks direct push — create a PR instead
+			branchName := "gh-secure/init"
+			sha, err := client.GetBranchSHA(defaultBranch)
+			if err != nil {
+				fail("Get branch SHA", err)
+			} else if err := client.CreateBranch(branchName, sha); err != nil {
+				fail("Create branch "+branchName, err)
+			} else {
+				allOk := true
+				for _, pf := range pendingFiles {
+					if err := client.CreateOrUpdateFileOnBranch(pf.Path, pf.Message, pf.Content, branchName); err != nil {
+						fail("Create "+pf.Path+" on "+branchName, err)
+						allOk = false
+					} else {
+						ok("Added " + pf.Path + " to " + branchName)
+					}
+				}
+				if allOk {
+					var fileList string
+					for _, pf := range pendingFiles {
+						fileList += "- `" + pf.Path + "`\n"
+					}
+					pr, err := client.CreatePullRequest(
+						"chore: add security & community files",
+						"Added by `gh secure init`:\n\n"+fileList,
+						branchName,
+						defaultBranch,
+					)
+					if err != nil {
+						fail("Create pull request", err)
+					} else {
+						ok("Created pull request: " + pr.HTMLURL)
+					}
+				}
+			}
+		} else {
+			// Some other error
+			fail("Create "+pendingFiles[0].Path, firstErr)
 		}
 	}
 

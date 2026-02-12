@@ -159,6 +159,8 @@ func renderStatus(data *statusData) {
 		if bp.RequireSignedCommits {
 			fmt.Printf("      %s Signed commits required\n", check)
 		}
+	} else if hasActiveRulesets(data.Rulesets) {
+		fmt.Printf("    %s %s: %s\n", check, data.Settings.DefaultBranch, dim.Render("protected via rulesets"))
 	} else {
 		fmt.Printf("    %s %s: %s\n", cross, data.Settings.DefaultBranch, dim.Render("not protected"))
 	}
@@ -213,4 +215,13 @@ func printBool(prefix, label string, val bool, check, cross string) {
 	} else {
 		fmt.Printf("%s%s %s\n", prefix, cross, label)
 	}
+}
+
+func hasActiveRulesets(rulesets []github.Ruleset) bool {
+	for _, rs := range rulesets {
+		if rs.Enforcement != "disabled" {
+			return true
+		}
+	}
+	return false
 }

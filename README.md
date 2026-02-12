@@ -5,7 +5,7 @@ A GitHub CLI extension that hardens any GitHub repository in under 60 seconds. A
 ## Installation
 
 ```bash
-gh extension install sahilxyz/gh-secure
+gh extension install sah1l/gh-secure
 ```
 
 ## Usage
@@ -127,6 +127,54 @@ gh secure reset --all
 | `--all` | reset | Remove all security settings |
 | `--rules` | reset | Remove rulesets only |
 | `--protection` | reset | Remove branch protection only |
+
+## Local Development
+
+### Prerequisites
+
+- [Go](https://go.dev/) 1.21+
+- [GitHub CLI](https://cli.github.com/) (`gh`) installed and authenticated
+
+### Build
+
+```bash
+go build -o gh-secure .
+```
+
+On Windows, specify the `.exe` extension:
+
+```powershell
+go build -o gh-secure.exe .
+```
+
+### Run locally
+
+```bash
+# Run without building
+go run . status --repo owner/repo
+
+# Or use the built binary
+./gh-secure status --repo owner/repo
+```
+
+### Install as a local gh extension
+
+```bash
+# Link the local build into gh's extension directory
+gh extension install .
+```
+
+### Lint
+
+```bash
+go vet ./...
+```
+
+### Format
+
+```bash
+go fmt ./...
+```
 
 ## Requirements
 

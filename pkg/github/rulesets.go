@@ -15,14 +15,22 @@ type RulesetConditions struct {
 }
 
 type RuleParameters struct {
-	RequiredApprovingReviewCount int  `json:"required_approving_review_count,omitempty"`
-	DismissStaleReviewsOnPush   bool `json:"dismiss_stale_reviews_on_push,omitempty"`
-	RequireCodeOwnerReview      bool `json:"require_code_owner_review,omitempty"`
-	RequireLastPushApproval     bool `json:"require_last_push_approval,omitempty"`
-	RequiredStatusChecks        []struct {
+	RequiredApprovingReviewCount    int      `json:"required_approving_review_count"`
+	DismissStaleReviewsOnPush      bool     `json:"dismiss_stale_reviews_on_push"`
+	RequireCodeOwnerReview         bool     `json:"require_code_owner_review"`
+	RequireLastPushApproval        bool     `json:"require_last_push_approval"`
+	RequiredReviewThreadResolution bool     `json:"required_review_thread_resolution"`
+	AllowedMergeMethods            []string `json:"allowed_merge_methods,omitempty"`
+	RequiredStatusChecks           []struct {
 		Context string `json:"context"`
 	} `json:"required_status_checks,omitempty"`
 	StrictRequiredStatusChecksPolicy bool `json:"strict_required_status_checks_policy,omitempty"`
+}
+
+type BypassActor struct {
+	ActorID    int    `json:"actor_id"`
+	ActorType  string `json:"actor_type"`
+	BypassMode string `json:"bypass_mode"`
 }
 
 type Rule struct {
@@ -31,12 +39,13 @@ type Rule struct {
 }
 
 type Ruleset struct {
-	ID          int               `json:"id,omitempty"`
-	Name        string            `json:"name"`
-	Target      string            `json:"target"`
-	Enforcement string            `json:"enforcement"`
-	Conditions  RulesetConditions `json:"conditions"`
-	Rules       []Rule            `json:"rules"`
+	ID           int               `json:"id,omitempty"`
+	Name         string            `json:"name"`
+	Target       string            `json:"target"`
+	Enforcement  string            `json:"enforcement"`
+	BypassActors []BypassActor     `json:"bypass_actors,omitempty"`
+	Conditions   RulesetConditions `json:"conditions"`
+	Rules        []Rule            `json:"rules"`
 }
 
 func (c *Client) ListRulesets() ([]Ruleset, error) {
@@ -93,18 +102,32 @@ func (c *Client) SupportsRulesets() bool {
 	return true
 }
 
+// RulesetOptions holds all parameters for building a protection ruleset.
+type RulesetOptions struct {
+	Name                string
+	Branch              string
+	Reviews             int
+	DismissStale        bool
+	CodeOwners          bool
+	LinearHistory       bool
+	SignedCommits       bool
+	AllowedMergeMethods []string
+	BypassActors        []BypassActor
+}
+
 // BuildProtectionRuleset creates a standard branch protection ruleset.
-func BuildProtectionRuleset(name, branch string, reviews int, dismissStale, codeOwners, linearHistory, signedCommits bool) *Ruleset {
+func BuildProtectionRuleset(opts RulesetOptions) *Ruleset {
 	rs := &Ruleset{
-		Name:        name,
-		Target:      "branch",
-		Enforcement: "active",
+		Name:         opts.Name,
+		Target:       "branch",
+		Enforcement:  "active",
+		BypassActors: opts.BypassActors,
 		Conditions: RulesetConditions{
 			RefName: struct {
 				Include []string `json:"include"`
 				Exclude []string `json:"exclude"`
 			}{
-				Include: []string{"refs/heads/" + branch},
+				Include: []string{"refs/heads/" + opts.Branch},
 				Exclude: []string{},
 			},
 		},
@@ -114,23 +137,27 @@ func BuildProtectionRuleset(name, branch string, reviews int, dismissStale, code
 		},
 	}
 
-	if reviews > 0 {
+	if opts.Reviews > 0 {
+		prParams := &RuleParameters{
+			RequiredApprovingReviewCount: opts.Reviews,
+			DismissStaleReviewsOnPush:   opts.DismissStale,
+			RequireCodeOwnerReview:      opts.CodeOwners,
+			RequireLastPushApproval:     false,
+		}
+		if len(opts.AllowedMergeMethods) > 0 {
+			prParams.AllowedMergeMethods = opts.AllowedMergeMethods
+		}
 		rs.Rules = append(rs.Rules, Rule{
-			Type: "pull_request",
-			Parameters: &RuleParameters{
-				RequiredApprovingReviewCount: reviews,
-				DismissStaleReviewsOnPush:   dismissStale,
-				RequireCodeOwnerReview:      codeOwners,
-				RequireLastPushApproval:     false,
-			},
+			Type:       "pull_request",
+			Parameters: prParams,
 		})
 	}
 
-	if linearHistory {
+	if opts.LinearHistory {
 		rs.Rules = append(rs.Rules, Rule{Type: "required_linear_history"})
 	}
 
-	if signedCommits {
+	if opts.SignedCommits {
 		rs.Rules = append(rs.Rules, Rule{Type: "required_signatures"})
 	}
 

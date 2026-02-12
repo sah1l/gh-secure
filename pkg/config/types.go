@@ -31,6 +31,8 @@ type RulesetConfig struct {
 	RequireSignedCommits bool     `yaml:"require_signed_commits,omitempty" json:"require_signed_commits,omitempty"`
 	PreventDeletion      bool     `yaml:"prevent_deletion,omitempty" json:"prevent_deletion,omitempty"`
 	PreventForcePush     bool     `yaml:"prevent_force_push,omitempty" json:"prevent_force_push,omitempty"`
+	AllowedMergeMethods  []string `yaml:"allowed_merge_methods,omitempty" json:"allowed_merge_methods,omitempty"`
+	AdminBypass          bool     `yaml:"admin_bypass,omitempty" json:"admin_bypass,omitempty"`
 }
 
 type SecurityConfig struct {

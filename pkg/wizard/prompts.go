@@ -3,27 +3,28 @@ package wizard
 import (
 	"github.com/charmbracelet/huh"
 	"github.com/sahilxyz/gh-secure/pkg/config"
+	gh "github.com/sahilxyz/gh-secure/pkg/github"
 )
 
 type Answers struct {
-	Visibility          string
-	License             string
-	MergeSquash         bool
-	MergeMerge          bool
-	MergeRebase         bool
-	DeleteBranchOnMerge bool
-	RequiredReviews     int
-	DismissStaleReviews bool
-	RequireCodeOwners   bool
-	EnforceAdmins       bool
+	Visibility           string
+	License              string
+	MergeSquash          bool
+	MergeMerge           bool
+	MergeRebase          bool
+	DeleteBranchOnMerge  bool
+	RequiredReviews      int
+	DismissStaleReviews  bool
+	RequireCodeOwners    bool
+	AdminBypass          bool
 	RequireLinearHistory bool
 	RequireSignedCommits bool
-	VulnAlerts          bool
-	AutoSecurityFixes   bool
-	SecretScanning      bool
-	SecretScanPushProt  bool
-	DependabotConfig    bool
-	CommunityFiles      []string
+	VulnAlerts           bool
+	AutoSecurityFixes    bool
+	SecretScanning       bool
+	SecretScanPushProt   bool
+	DependabotConfig     bool
+	CommunityFiles       []string
 }
 
 func reviewOptions() []huh.Option[int] {
@@ -35,14 +36,83 @@ func reviewOptions() []huh.Option[int] {
 	}
 }
 
-func RunWizard() (*config.Config, error) {
+func RunWizard(current *gh.CurrentState) (*config.Config, error) {
 	var a Answers
+
+	// Default defaults (used when current is nil)
 	a.MergeSquash = true
 	a.DeleteBranchOnMerge = true
 	a.RequiredReviews = 1
 	a.DismissStaleReviews = true
 	a.VulnAlerts = true
 	a.AutoSecurityFixes = true
+
+	if current != nil {
+		// Pre-populate from current repo state
+		if current.Settings != nil {
+			a.Visibility = current.Settings.Visibility
+			a.MergeSquash = current.Settings.AllowSquashMerge
+			a.MergeMerge = current.Settings.AllowMergeCommit
+			a.MergeRebase = current.Settings.AllowRebaseMerge
+			a.DeleteBranchOnMerge = current.Settings.DeleteBranchOnMerge
+			// Pre-populate license from current repo
+			if current.Settings.License != nil {
+				a.License = current.Settings.License.Key
+			}
+		}
+		if current.Security != nil {
+			a.VulnAlerts = current.Security.VulnerabilityAlerts
+			a.AutoSecurityFixes = current.Security.AutomatedSecurityFixes
+			a.SecretScanning = current.Security.SecretScanning
+			a.SecretScanPushProt = current.Security.SecretScanningPushProt
+		}
+		// Pre-populate dependabot: keep enabled if already exists, suggest creating if missing
+		a.DependabotConfig = current.Files[".github/dependabot.yml"]
+		if !a.DependabotConfig {
+			a.DependabotConfig = true // default to creating if missing
+		}
+
+		// Pre-populate branch protection from rulesets or legacy protection
+		if len(current.Rulesets) > 0 {
+			rs := current.Rulesets[0]
+			for _, rule := range rs.Rules {
+				switch rule.Type {
+				case "pull_request":
+					if rule.Parameters != nil {
+						a.RequiredReviews = rule.Parameters.RequiredApprovingReviewCount
+						a.DismissStaleReviews = rule.Parameters.DismissStaleReviewsOnPush
+						a.RequireCodeOwners = rule.Parameters.RequireCodeOwnerReview
+					}
+				case "required_linear_history":
+					a.RequireLinearHistory = true
+				case "required_signatures":
+					a.RequireSignedCommits = true
+				}
+			}
+			// Check if admin bypass is configured
+			for _, actor := range rs.BypassActors {
+				if actor.ActorType == "RepositoryRole" && actor.ActorID == 5 {
+					a.AdminBypass = true
+					break
+				}
+			}
+		} else if current.Protection != nil {
+			a.RequiredReviews = current.Protection.RequiredReviews
+			a.DismissStaleReviews = current.Protection.DismissStaleReviews
+			a.RequireCodeOwners = current.Protection.RequireCodeOwners
+			a.AdminBypass = !current.Protection.EnforceAdmins
+			a.RequireLinearHistory = current.Protection.RequireLinearHistory
+			a.RequireSignedCommits = current.Protection.RequireSignedCommits
+		}
+
+		// Pre-select all community files: existing ones stay selected (applyConfig skips them),
+		// missing ones are also selected so they get created.
+		for _, f := range []string{"CONTRIBUTING.md", "SECURITY.md", "CODE_OF_CONDUCT.md"} {
+			a.CommunityFiles = append(a.CommunityFiles, f)
+		}
+		// Always include CODEOWNERS in the selection
+		a.CommunityFiles = append(a.CommunityFiles, "CODEOWNERS")
+	}
 
 	// Section 1: Visibility
 	visForm := huh.NewForm(
@@ -79,6 +149,7 @@ func RunWizard() (*config.Config, error) {
 						huh.NewOption("CONTRIBUTING.md", "CONTRIBUTING.md"),
 						huh.NewOption("SECURITY.md", "SECURITY.md"),
 						huh.NewOption("CODE_OF_CONDUCT.md", "CODE_OF_CONDUCT.md"),
+						huh.NewOption("CODEOWNERS", "CODEOWNERS"),
 					).
 					Value(&a.CommunityFiles),
 			),
@@ -123,8 +194,8 @@ func RunWizard() (*config.Config, error) {
 				Title("Require CODEOWNERS review?").
 				Value(&a.RequireCodeOwners),
 			huh.NewConfirm().
-				Title("Enforce rules for admins?").
-				Value(&a.EnforceAdmins),
+				Title("Allow repo admin to bypass rules?").
+				Value(&a.AdminBypass),
 			huh.NewConfirm().
 				Title("Require linear history?").
 				Value(&a.RequireLinearHistory),
@@ -185,7 +256,19 @@ func answersToConfig(a *Answers) *config.Config {
 		Files: a.CommunityFiles,
 	}
 
-	if a.RequiredReviews > 0 || a.EnforceAdmins || a.RequireLinearHistory || a.RequireSignedCommits {
+	if a.RequiredReviews > 0 || a.RequireLinearHistory || a.RequireSignedCommits {
+		// Build allowed merge methods from merge strategy selections
+		var methods []string
+		if a.MergeSquash {
+			methods = append(methods, "squash")
+		}
+		if a.MergeMerge {
+			methods = append(methods, "merge")
+		}
+		if a.MergeRebase {
+			methods = append(methods, "rebase")
+		}
+
 		cfg.Rulesets = []config.RulesetConfig{
 			{
 				Name:                 "Protect default branch",
@@ -199,6 +282,8 @@ func answersToConfig(a *Answers) *config.Config {
 				RequireSignedCommits: a.RequireSignedCommits,
 				PreventDeletion:      true,
 				PreventForcePush:     true,
+				AllowedMergeMethods:  methods,
+				AdminBypass:          a.AdminBypass,
 			},
 		}
 	}

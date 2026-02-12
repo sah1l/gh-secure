@@ -157,3 +157,9 @@ func isHTTPError(err error, statusCode int, target **api.HTTPError) bool {
 	}
 	return false
 }
+
+// IsRuleViolation returns true if the error is an HTTP 409 (rule violation).
+func IsRuleViolation(err error) bool {
+	var httpErr *api.HTTPError
+	return isHTTPError(err, 409, &httpErr)
+}

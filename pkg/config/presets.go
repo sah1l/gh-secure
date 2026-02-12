@@ -21,6 +21,8 @@ var Presets = map[string]Config{
 				DismissStaleReviews: true,
 				PreventDeletion:     true,
 				PreventForcePush:    true,
+				AllowedMergeMethods: []string{"squash"},
+				AdminBypass:         true,
 			},
 		},
 		Security: SecurityConfig{
@@ -30,7 +32,7 @@ var Presets = map[string]Config{
 			SecretScanningPushProt: true,
 			DependabotConfig:       true,
 		},
-		Files: []string{"CONTRIBUTING.md", "SECURITY.md", "CODE_OF_CONDUCT.md"},
+		Files: []string{"CONTRIBUTING.md", "SECURITY.md", "CODE_OF_CONDUCT.md", "CODEOWNERS"},
 	},
 
 	"private": {
@@ -52,6 +54,8 @@ var Presets = map[string]Config{
 				DismissStaleReviews: true,
 				PreventDeletion:     true,
 				PreventForcePush:    true,
+				AllowedMergeMethods: []string{"squash"},
+				AdminBypass:         true,
 			},
 		},
 		Security: SecurityConfig{
@@ -85,6 +89,7 @@ var Presets = map[string]Config{
 				RequireSignedCommits: true,
 				PreventDeletion:      true,
 				PreventForcePush:     true,
+				AllowedMergeMethods:  []string{"squash"},
 			},
 		},
 		Security: SecurityConfig{

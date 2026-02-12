@@ -1,0 +1,13 @@
+package templates
+
+import "fmt"
+
+func Codeowners(owner string) string {
+	return fmt.Sprintf(`# This CODEOWNERS file defines the default reviewers for this repository.
+# Each line is a file pattern followed by one or more owners.
+# See: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Default: repository owner reviews everything
+* @%s
+`, owner)
+}
