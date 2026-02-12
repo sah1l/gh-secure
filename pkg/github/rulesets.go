@@ -57,6 +57,22 @@ func (c *Client) ListRulesets() ([]Ruleset, error) {
 	return rulesets, nil
 }
 
+func (c *Client) ListRulesetsDetailed() ([]Ruleset, error) {
+	summaries, err := c.ListRulesets()
+	if err != nil {
+		return nil, err
+	}
+	detailed := make([]Ruleset, 0, len(summaries))
+	for _, s := range summaries {
+		rs, err := c.GetRuleset(s.ID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get ruleset %d (%s): %w", s.ID, s.Name, err)
+		}
+		detailed = append(detailed, *rs)
+	}
+	return detailed, nil
+}
+
 func (c *Client) GetRuleset(id int) (*Ruleset, error) {
 	var rs Ruleset
 	err := c.Get(fmt.Sprintf("%s/%d", c.RepoPath("rulesets"), id), &rs)

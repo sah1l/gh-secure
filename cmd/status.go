@@ -55,7 +55,7 @@ func runStatus(cmd *cobra.Command, args []string) error {
 
 	// Fetch rulesets
 	if client.SupportsRulesets() {
-		data.Rulesets, _ = client.ListRulesets()
+		data.Rulesets, _ = client.ListRulesetsDetailed()
 	}
 
 	// Fetch security settings
