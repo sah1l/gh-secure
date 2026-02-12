@@ -2,8 +2,8 @@ package wizard
 
 import (
 	"github.com/charmbracelet/huh"
-	"github.com/sahilxyz/gh-secure/pkg/config"
-	gh "github.com/sahilxyz/gh-secure/pkg/github"
+	"github.com/sah1l/gh-secure/pkg/config"
+	gh "github.com/sah1l/gh-secure/pkg/github"
 )
 
 type Answers struct {

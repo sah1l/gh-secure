@@ -1,6 +1,6 @@
 package main
 
-import "github.com/sahilxyz/gh-secure/cmd"
+import "github.com/sah1l/gh-secure/cmd"
 
 func main() {
 	cmd.Execute()

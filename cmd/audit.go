@@ -4,8 +4,8 @@ import (
 	"fmt"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/sahilxyz/gh-secure/pkg/audit"
-	"github.com/sahilxyz/gh-secure/pkg/github"
+	"github.com/sah1l/gh-secure/pkg/audit"
+	"github.com/sah1l/gh-secure/pkg/github"
 	"github.com/spf13/cobra"
 )
 

@@ -6,7 +6,7 @@ import (
 
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
-	gh "github.com/sahilxyz/gh-secure/pkg/github"
+	gh "github.com/sah1l/gh-secure/pkg/github"
 	"github.com/spf13/cobra"
 )
 

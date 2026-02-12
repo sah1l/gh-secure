@@ -6,10 +6,10 @@ import (
 
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/sahilxyz/gh-secure/pkg/config"
-	gh "github.com/sahilxyz/gh-secure/pkg/github"
-	"github.com/sahilxyz/gh-secure/pkg/templates"
-	"github.com/sahilxyz/gh-secure/pkg/wizard"
+	"github.com/sah1l/gh-secure/pkg/config"
+	gh "github.com/sah1l/gh-secure/pkg/github"
+	"github.com/sah1l/gh-secure/pkg/templates"
+	"github.com/sah1l/gh-secure/pkg/wizard"
 	"github.com/spf13/cobra"
 )
 

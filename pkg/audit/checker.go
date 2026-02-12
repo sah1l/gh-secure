@@ -1,6 +1,6 @@
 package audit
 
-import "github.com/sahilxyz/gh-secure/pkg/github"
+import "github.com/sah1l/gh-secure/pkg/github"
 
 type Severity string
 

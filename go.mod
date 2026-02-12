@@ -1,4 +1,4 @@
-module github.com/sahilxyz/gh-secure
+module github.com/sah1l/gh-secure
 
 go 1.25.0
 
