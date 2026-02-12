@@ -62,13 +62,17 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	data.Security, _ = client.GetSecuritySettings()
 
 	// Check community files
-	communityFiles := []string{"LICENSE", "CONTRIBUTING.md", "SECURITY.md", "CODE_OF_CONDUCT.md", ".github/dependabot.yml", "CODEOWNERS", ".github/CODEOWNERS"}
+	communityFiles := []string{"LICENSE", "CONTRIBUTING.md", "SECURITY.md", "CODE_OF_CONDUCT.md", ".github/dependabot.yml"}
 	for _, f := range communityFiles {
 		file, err := client.GetFile(f)
 		if err == nil {
 			data.CommunityFiles[f] = file.Exists
 		}
 	}
+	// CODEOWNERS can live at root or .github/ — treat as one entry
+	coRoot, _ := client.GetFile("CODEOWNERS")
+	coGH, _ := client.GetFile(".github/CODEOWNERS")
+	data.CommunityFiles["CODEOWNERS"] = (coRoot != nil && coRoot.Exists) || (coGH != nil && coGH.Exists)
 
 	if statusJSON {
 		return outputJSON(data)
