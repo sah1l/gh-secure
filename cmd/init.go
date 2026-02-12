@@ -87,7 +87,22 @@ func runInit(cmd *cobra.Command, args []string) error {
 	fmt.Println()
 
 	// Apply settings
-	return applyConfig(client, cfg, current)
+	if err := applyConfig(client, cfg, current); err != nil {
+		return err
+	}
+
+	// Apply files
+	if err := applyFiles(client, cfg, current, FileApplyOptions{
+		PromptOverwrite: false,
+		SkipConfirm:     false,
+	}); err != nil {
+		return err
+	}
+
+	green := lipgloss.NewStyle().Foreground(lipgloss.Color("2"))
+	fmt.Println()
+	fmt.Printf("  %s\n\n", green.Render("Done! Run `gh secure status` to verify."))
+	return nil
 }
 
 func renderConfigSummary(cfg *config.Config, defaultBranch string) {
@@ -361,22 +376,45 @@ func applyConfig(client *gh.Client, cfg *config.Config, current *gh.CurrentState
 		}
 	}
 
-	// 6-8. File creation (dependabot, community files, license)
-	// Collect all files to create, then decide: push directly or create PR.
-	type pendingFile struct {
-		Path    string
-		Message string
-		Content string
-	}
-	var pendingFiles []pendingFile
+	return nil
+}
 
+// FileApplyOptions controls how file creation handles existing files.
+type FileApplyOptions struct {
+	PromptOverwrite bool // true = ask before overwriting existing files; false = skip existing
+	SkipConfirm     bool // true = overwrite without prompting (--yes flag)
+}
+
+// pendingFile represents a file to be created or updated.
+type pendingFile struct {
+	Path    string
+	Message string
+	Content string
+}
+
+// applyFiles handles dependabot, community files, and license creation.
+func applyFiles(client *gh.Client, cfg *config.Config, current *gh.CurrentState, opts FileApplyOptions) error {
+	green := lipgloss.NewStyle().Foreground(lipgloss.Color("2"))
+	red := lipgloss.NewStyle().Foreground(lipgloss.Color("1"))
+	dim := lipgloss.NewStyle().Faint(true)
+	ok := func(msg string) { fmt.Printf("  %s %s\n", green.Render("✓"), msg) }
+	fail := func(msg string, err error) { fmt.Printf("  %s %s: %s\n", red.Render("✗"), msg, err) }
+	skip := func(msg string) { fmt.Printf("  %s %s\n", dim.Render("·"), msg) }
+
+	settings := current.Settings
+	defaultBranch := settings.DefaultBranch
 	owner := client.Owner()
 	repoName := client.RepoName()
 
+	var pendingFiles []pendingFile
+
 	// Dependabot config
 	if cfg.Security.DependabotConfig {
-		if current.Files[".github/dependabot.yml"] {
+		exists := current.Files[".github/dependabot.yml"]
+		if exists && !opts.PromptOverwrite {
 			skip("dependabot.yml already exists")
+		} else if exists && opts.PromptOverwrite && !shouldOverwrite(".github/dependabot.yml", opts.SkipConfirm) {
+			skip("dependabot.yml skipped")
 		} else {
 			ecosystems, _ := client.DetectEcosystems()
 			var content string
@@ -395,12 +433,16 @@ func applyConfig(client *gh.Client, cfg *config.Config, current *gh.CurrentState
 
 	// Community files
 	for _, f := range cfg.Files {
-		if f == "CODEOWNERS" && (current.Files["CODEOWNERS"] || current.Files[".github/CODEOWNERS"]) {
-			skip("CODEOWNERS already exists")
+		exists := current.Files[f]
+		if f == "CODEOWNERS" {
+			exists = current.Files["CODEOWNERS"] || current.Files[".github/CODEOWNERS"]
+		}
+		if exists && !opts.PromptOverwrite {
+			skip(f + " already exists")
 			continue
 		}
-		if current.Files[f] {
-			skip(f + " already exists")
+		if exists && opts.PromptOverwrite && !shouldOverwrite(f, opts.SkipConfirm) {
+			skip(f + " skipped")
 			continue
 		}
 		var content string
@@ -424,25 +466,28 @@ func applyConfig(client *gh.Client, cfg *config.Config, current *gh.CurrentState
 	}
 
 	// License
-	if cfg.License != "" && settings.License == nil {
-		licenseContent := getLicenseContent(cfg.License, owner)
-		if licenseContent != "" {
-			pendingFiles = append(pendingFiles, pendingFile{
-				Path:    "LICENSE",
-				Message: "docs: add LICENSE (" + cfg.License + ")",
-				Content: licenseContent,
-			})
+	if cfg.License != "" {
+		hasLicense := settings.License != nil
+		if hasLicense && !opts.PromptOverwrite {
+			skip("LICENSE already exists")
+		} else if hasLicense && opts.PromptOverwrite && !shouldOverwrite("LICENSE", opts.SkipConfirm) {
+			skip("LICENSE skipped")
+		} else if !hasLicense || opts.PromptOverwrite || opts.SkipConfirm {
+			licenseContent := getLicenseContent(cfg.License, owner)
+			if licenseContent != "" {
+				pendingFiles = append(pendingFiles, pendingFile{
+					Path:    "LICENSE",
+					Message: "docs: add LICENSE (" + cfg.License + ")",
+					Content: licenseContent,
+				})
+			}
 		}
-	} else if cfg.License != "" {
-		skip("LICENSE already exists")
 	}
 
 	// Try to push files directly. If we hit a 409 (rule violation), fall back to a PR.
 	if len(pendingFiles) > 0 {
-		// Try the first file to see if direct push works
 		firstErr := client.CreateOrUpdateFile(pendingFiles[0].Path, pendingFiles[0].Message, pendingFiles[0].Content)
 		if firstErr == nil {
-			// Direct push works — continue with the rest
 			ok("Created " + pendingFiles[0].Path)
 			for _, pf := range pendingFiles[1:] {
 				if err := client.CreateOrUpdateFile(pf.Path, pf.Message, pf.Content); err != nil {
@@ -452,7 +497,6 @@ func applyConfig(client *gh.Client, cfg *config.Config, current *gh.CurrentState
 				}
 			}
 		} else if gh.IsRuleViolation(firstErr) {
-			// Branch protection blocks direct push — create a PR instead
 			branchName := "gh-secure/init"
 			sha, err := client.GetBranchSHA(defaultBranch)
 			if err != nil {
@@ -476,7 +520,7 @@ func applyConfig(client *gh.Client, cfg *config.Config, current *gh.CurrentState
 					}
 					pr, err := client.CreatePullRequest(
 						"chore: add security & community files",
-						"Added by `gh secure init`:\n\n"+fileList,
+						"Added by `gh secure`:\n\n"+fileList,
 						branchName,
 						defaultBranch,
 					)
@@ -488,14 +532,31 @@ func applyConfig(client *gh.Client, cfg *config.Config, current *gh.CurrentState
 				}
 			}
 		} else {
-			// Some other error
 			fail("Create "+pendingFiles[0].Path, firstErr)
 		}
 	}
 
-	fmt.Println()
-	fmt.Printf("  %s\n\n", green.Render("Done! Run `gh secure status` to verify."))
 	return nil
+}
+
+// shouldOverwrite prompts the user to confirm overwriting an existing file.
+// Returns true if the file should be overwritten.
+func shouldOverwrite(filename string, skipConfirm bool) bool {
+	if skipConfirm {
+		return true
+	}
+	var overwrite bool
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewConfirm().
+				Title(fmt.Sprintf("%s already exists. Overwrite?", filename)).
+				Value(&overwrite),
+		),
+	)
+	if err := form.Run(); err != nil {
+		return false
+	}
+	return overwrite
 }
 
 func getLicenseContent(license, owner string) string {

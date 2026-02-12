@@ -26,6 +26,12 @@ gh secure init
 # Apply a preset (oss, private, strict)
 gh secure init --preset oss
 
+# Export security config to a file
+gh secure export -o config.yaml
+
+# Import config to another repo
+gh secure import -f config.yaml --repo owner/other-repo
+
 # Remove security settings
 gh secure reset
 ```
@@ -98,6 +104,30 @@ gh secure init --preset strict   # private, 2 reviews, signed commits, linear hi
 
 Uses rulesets when available, falls back to legacy branch protection automatically.
 
+### `gh secure export`
+
+Export a repository's security configuration as YAML. Useful for backing up settings or replicating them across repos.
+
+```bash
+# Print config to stdout
+gh secure export --repo owner/repo
+
+# Save to a file
+gh secure export --repo owner/repo -o config.yaml
+```
+
+### `gh secure import`
+
+Apply a previously exported configuration to a repository. Prompts before overwriting existing files; use `--yes` to skip all prompts for CI.
+
+```bash
+# Apply config interactively
+gh secure import -f config.yaml --repo owner/other-repo
+
+# Apply without prompts (CI-friendly)
+gh secure import -f config.yaml --repo owner/other-repo --yes
+```
+
 ### `gh secure reset`
 
 Remove security settings selectively or completely.
@@ -124,6 +154,9 @@ gh secure reset --all
 | `--json` | status, audit | Output as JSON |
 | `--preset name` | init | Apply a preset (oss, private, strict) |
 | `--force` | init | Reset existing settings before applying |
+| `--output`, `-o` | export | Write YAML to file instead of stdout |
+| `--file`, `-f` | import | Path to YAML config file (required) |
+| `--yes`, `-y` | import | Skip all confirmation prompts |
 | `--all` | reset | Remove all security settings |
 | `--rules` | reset | Remove rulesets only |
 | `--protection` | reset | Remove branch protection only |
