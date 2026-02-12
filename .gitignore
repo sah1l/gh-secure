@@ -1,0 +1,14 @@
+gh-secure
+gh-secure.exe
+dist/
+*.exe
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
