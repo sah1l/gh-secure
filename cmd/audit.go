@@ -39,7 +39,7 @@ func runAudit(cmd *cobra.Command, args []string) error {
 
 	var rulesets []github.Ruleset
 	if client.SupportsRulesets() {
-		rulesets, _ = client.ListRulesets()
+		rulesets, _ = client.ListRulesetsDetailed()
 	}
 
 	security, _ := client.GetSecuritySettings()

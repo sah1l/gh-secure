@@ -117,7 +117,7 @@ func (c *Client) GetCurrentState() (*CurrentState, error) {
 	state.Security = security
 
 	if c.SupportsRulesets() {
-		rulesets, err := c.ListRulesets()
+		rulesets, err := c.ListRulesetsDetailed()
 		if err == nil {
 			state.Rulesets = rulesets
 		}
