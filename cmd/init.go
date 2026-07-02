@@ -357,7 +357,9 @@ func applyConfig(client *gh.Client, cfg *config.Config, current *gh.CurrentState
 		}
 	}
 
-	var secretScanningEnabled bool
+	// Start from live state so push protection isn't blocked when secret
+	// scanning is already enabled but absent from the config.
+	secretScanningEnabled := security.SecretScanning
 
 	if cfg.Security.SecretScanning {
 		if security.SecretScanning {
@@ -497,7 +499,7 @@ func applyFiles(client *gh.Client, cfg *config.Config, current *gh.CurrentState,
 			skip("LICENSE already exists")
 		} else if hasLicense && opts.PromptOverwrite && !shouldOverwrite("LICENSE", opts.SkipConfirm) {
 			skip("LICENSE skipped")
-		} else if !hasLicense || opts.PromptOverwrite || opts.SkipConfirm {
+		} else {
 			licenseContent := getLicenseContent(cfg.License, owner)
 			if licenseContent != "" {
 				pendingFiles = append(pendingFiles, pendingFile{

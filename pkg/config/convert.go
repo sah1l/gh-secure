@@ -40,8 +40,12 @@ func StateToConfig(state *gh.CurrentState) *Config {
 
 	// Convert rulesets
 	if len(state.Rulesets) > 0 {
+		defaultBranch := ""
+		if state.Settings != nil {
+			defaultBranch = state.Settings.DefaultBranch
+		}
 		for _, rs := range state.Rulesets {
-			rsCfg := rulesetToConfig(rs, state.Settings.DefaultBranch)
+			rsCfg := rulesetToConfig(rs, defaultBranch)
 			cfg.Rulesets = append(cfg.Rulesets, rsCfg)
 		}
 	} else if state.Protection != nil {
