@@ -214,6 +214,10 @@ go fmt ./...
 - [GitHub CLI](https://cli.github.com/) (`gh`) installed and authenticated
 - Repository admin access for write operations
 
+## Roadmap
+
+See [ROADMAP.md](ROADMAP.md) for planned features and future tool ideas.
+
 ## License
 
 MIT
