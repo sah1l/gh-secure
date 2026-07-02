@@ -9,25 +9,33 @@ import (
 // StateToConfig converts live repo state into a portable Config.
 func StateToConfig(state *gh.CurrentState) *Config {
 	cfg := &Config{
-		Version:    CurrentVersion,
-		Visibility: state.Settings.Visibility,
-		MergeStrategy: MergeStrategy{
+		Version: CurrentVersion,
+	}
+
+	// Handle nil Settings
+	if state.Settings != nil {
+		cfg.Visibility = state.Settings.Visibility
+		cfg.MergeStrategy = MergeStrategy{
 			AllowSquash: state.Settings.AllowSquashMerge,
 			AllowMerge:  state.Settings.AllowMergeCommit,
 			AllowRebase: state.Settings.AllowRebaseMerge,
-		},
-		DeleteBranchOnMerge: state.Settings.DeleteBranchOnMerge,
-		Security: SecurityConfig{
+		}
+		cfg.DeleteBranchOnMerge = state.Settings.DeleteBranchOnMerge
+
+		if state.Settings.License != nil {
+			cfg.License = state.Settings.License.Key
+		}
+	}
+
+	// Handle nil Security
+	if state.Security != nil {
+		cfg.Security = SecurityConfig{
 			VulnerabilityAlerts:    state.Security.VulnerabilityAlerts,
 			AutomatedSecurityFixes: state.Security.AutomatedSecurityFixes,
 			SecretScanning:         state.Security.SecretScanning,
 			SecretScanningPushProt: state.Security.SecretScanningPushProt,
 			DependabotConfig:       state.Files[".github/dependabot.yml"],
-		},
-	}
-
-	if state.Settings.License != nil {
-		cfg.License = state.Settings.License.Key
+		}
 	}
 
 	// Convert rulesets

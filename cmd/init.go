@@ -2,7 +2,9 @@ package cmd
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
@@ -107,7 +109,6 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 func renderConfigSummary(cfg *config.Config, defaultBranch string) {
 	bold := lipgloss.NewStyle().Bold(true)
-	dim := lipgloss.NewStyle().Faint(true)
 
 	fmt.Printf("%s\n\n", bold.Render("Configuration Summary"))
 
@@ -176,7 +177,6 @@ func renderConfigSummary(cfg *config.Config, defaultBranch string) {
 		}
 	}
 
-	_ = dim
 	fmt.Println()
 }
 
@@ -248,9 +248,14 @@ func applyConfig(client *gh.Client, cfg *config.Config, current *gh.CurrentState
 					}
 				}
 
+				branch := defaultBranch
+				if len(branches) > 0 {
+					branch = branches[0]
+				}
+
 				opts := gh.RulesetOptions{
 					Name:                rsCfg.Name,
-					Branch:              branches[0],
+					Branch:              branch,
 					Reviews:             rsCfg.RequiredReviews,
 					DismissStale:        rsCfg.DismissStaleReviews,
 					CodeOwners:          rsCfg.RequireCodeOwners,
@@ -352,26 +357,46 @@ func applyConfig(client *gh.Client, cfg *config.Config, current *gh.CurrentState
 		}
 	}
 
+	var secretScanningEnabled bool
+
 	if cfg.Security.SecretScanning {
 		if security.SecretScanning {
 			skip("Secret scanning already enabled")
+			secretScanningEnabled = true
 		} else {
 			if err := client.SetSecretScanning(true); err != nil {
 				fail("Enable secret scanning", err)
+				secretScanningEnabled = false
 			} else {
-				ok("Enabled secret scanning")
+				// Verify it was actually enabled
+				updated, err := client.GetSecuritySettings()
+				if err != nil || updated == nil || !updated.SecretScanning {
+					fail("Enable secret scanning", fmt.Errorf("API returned success but feature not enabled (requires GitHub Advanced Security for private repos)"))
+					secretScanningEnabled = false
+				} else {
+					ok("Enabled secret scanning")
+					secretScanningEnabled = true
+				}
 			}
 		}
 	}
 
 	if cfg.Security.SecretScanningPushProt {
-		if security.SecretScanningPushProt {
+		if !secretScanningEnabled {
+			skip("Enable secret scanning push protection: requires secret scanning to be enabled first")
+		} else if security.SecretScanningPushProt {
 			skip("Secret scanning push protection already enabled")
 		} else {
 			if err := client.SetSecretScanningPushProtection(true); err != nil {
 				fail("Enable secret scanning push protection", err)
 			} else {
-				ok("Enabled secret scanning push protection")
+				// Verify it was actually enabled
+				updated, err := client.GetSecuritySettings()
+				if err != nil || updated == nil || !updated.SecretScanningPushProt {
+					fail("Enable secret scanning push protection", fmt.Errorf("API returned success but feature not enabled (requires GitHub Advanced Security for private repos)"))
+				} else {
+					ok("Enabled secret scanning push protection")
+				}
 			}
 		}
 	}
@@ -560,7 +585,7 @@ func shouldOverwrite(filename string, skipConfirm bool) bool {
 }
 
 func getLicenseContent(license, owner string) string {
-	year := "2025"
+	year := strconv.Itoa(time.Now().Year())
 	switch license {
 	case "mit":
 		return fmt.Sprintf(`MIT License

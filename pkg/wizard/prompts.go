@@ -122,6 +122,7 @@ func RunWizard(current *gh.CurrentState) (*config.Config, error) {
 				Options(
 					huh.NewOption("Public", "public"),
 					huh.NewOption("Private", "private"),
+					huh.NewOption("Internal", "internal"),
 				).
 				Value(&a.Visibility),
 		),
@@ -267,6 +268,10 @@ func answersToConfig(a *Answers) *config.Config {
 		}
 		if a.MergeRebase {
 			methods = append(methods, "rebase")
+		}
+		// Default to squash if no method selected
+		if len(methods) == 0 {
+			methods = append(methods, "squash")
 		}
 
 		cfg.Rulesets = []config.RulesetConfig{

@@ -1,0 +1,14 @@
+{
+  "id": 2,
+  "name": "Old ruleset",
+  "target": "branch",
+  "enforcement": "disabled",
+  "conditions": {
+    "ref_name": {
+      "include": ["refs/heads/main"],
+      "exclude": []
+    }
+  },
+  "rules": [],
+  "bypass_actors": []
+}

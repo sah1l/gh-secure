@@ -31,19 +31,24 @@ func (c *Client) GetSecuritySettings() (*SecuritySettings, error) {
 	settings := &SecuritySettings{}
 
 	// Check vulnerability alerts
+	// The API returns 204 No Content when enabled, 404 when not enabled
+	// go-gh treats non-2xx responses as errors
 	path := c.RepoPath("vulnerability-alerts")
 	err := c.Get(path, nil)
 	if err != nil {
 		var httpErr *api.HTTPError
 		if isHTTPError(err, http.StatusNotFound, &httpErr) {
+			// 404 = vulnerability alerts not enabled
 			settings.VulnerabilityAlerts = false
 		} else if isHTTPError(err, 204, &httpErr) {
+			// 204 = vulnerability alerts enabled (go-gh treats as error)
 			settings.VulnerabilityAlerts = true
 		} else {
-			// 204 means enabled but go-gh might not treat it as error
+			// Other errors - assume disabled
 			settings.VulnerabilityAlerts = false
 		}
 	} else {
+		// 200 OK = vulnerability alerts enabled
 		settings.VulnerabilityAlerts = true
 	}
 
