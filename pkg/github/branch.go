@@ -46,6 +46,10 @@ func (c *Client) GetBranchProtection(branch string) (*BranchProtection, error) {
 		if isHTTPError(err, http.StatusNotFound, &httpErr) {
 			return nil, nil // not protected
 		}
+		// 403 means branch protection requires GitHub Pro for private repos
+		if isHTTPError(err, http.StatusForbidden, &httpErr) {
+			return nil, nil // Pro required, treat as not protected
+		}
 		return nil, fmt.Errorf("failed to get branch protection: %w", err)
 	}
 

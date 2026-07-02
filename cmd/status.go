@@ -51,15 +51,24 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	}
 
 	// Fetch branch protection for default branch
-	data.BranchProtection, _ = client.GetBranchProtection(data.Settings.DefaultBranch)
+	data.BranchProtection, err = client.GetBranchProtection(data.Settings.DefaultBranch)
+	if err != nil {
+		return fmt.Errorf("fetching branch protection: %w", err)
+	}
 
 	// Fetch rulesets
 	if client.SupportsRulesets() {
-		data.Rulesets, _ = client.ListRulesetsDetailed()
+		data.Rulesets, err = client.ListRulesetsDetailed()
+		if err != nil {
+			return fmt.Errorf("fetching rulesets: %w", err)
+		}
 	}
 
 	// Fetch security settings
-	data.Security, _ = client.GetSecuritySettings()
+	data.Security, err = client.GetSecuritySettings()
+	if err != nil {
+		return fmt.Errorf("fetching security settings: %w", err)
+	}
 
 	// Check community files
 	communityFiles := []string{"LICENSE", "CONTRIBUTING.md", "SECURITY.md", "CODE_OF_CONDUCT.md", ".github/dependabot.yml"}
@@ -70,8 +79,14 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		}
 	}
 	// CODEOWNERS can live at root or .github/ — treat as one entry
-	coRoot, _ := client.GetFile("CODEOWNERS")
-	coGH, _ := client.GetFile(".github/CODEOWNERS")
+	coRoot, err := client.GetFile("CODEOWNERS")
+	if err != nil {
+		return fmt.Errorf("fetching CODEOWNERS: %w", err)
+	}
+	coGH, err := client.GetFile(".github/CODEOWNERS")
+	if err != nil {
+		return fmt.Errorf("fetching .github/CODEOWNERS: %w", err)
+	}
 	data.CommunityFiles["CODEOWNERS"] = (coRoot != nil && coRoot.Exists) || (coGH != nil && coGH.Exists)
 
 	if statusJSON {
@@ -98,8 +113,6 @@ func renderStatus(data *statusData) {
 	check := green.Render("✓")
 	cross := red.Render("✗")
 	warn := yellow.Render("!")
-
-	_ = warn // used conditionally
 
 	fmt.Println()
 	fmt.Printf("%s (%s)\n", bold.Render(data.Repo), data.Settings.Visibility)

@@ -32,7 +32,10 @@ func (c *Client) GetFile(path string) (*RepoFile, error) {
 		return nil, fmt.Errorf("failed to get file %s: %w", path, err)
 	}
 
-	decoded, _ := base64.StdEncoding.DecodeString(resp.Content)
+	decoded, err := base64.StdEncoding.DecodeString(resp.Content)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode file content for %s: %w", path, err)
+	}
 	return &RepoFile{
 		Path:    path,
 		SHA:     resp.SHA,

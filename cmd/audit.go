@@ -35,14 +35,23 @@ func runAudit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("fetching repo settings: %w", err)
 	}
 
-	bp, _ := client.GetBranchProtection(settings.DefaultBranch)
+	bp, err := client.GetBranchProtection(settings.DefaultBranch)
+	if err != nil {
+		return fmt.Errorf("fetching branch protection: %w", err)
+	}
 
 	var rulesets []github.Ruleset
 	if client.SupportsRulesets() {
-		rulesets, _ = client.ListRulesetsDetailed()
+		rulesets, err = client.ListRulesetsDetailed()
+		if err != nil {
+			return fmt.Errorf("fetching rulesets: %w", err)
+		}
 	}
 
-	security, _ := client.GetSecuritySettings()
+	security, err := client.GetSecuritySettings()
+	if err != nil {
+		return fmt.Errorf("fetching security settings: %w", err)
+	}
 
 	files := make(map[string]bool)
 	communityFiles := []string{"LICENSE", "CONTRIBUTING.md", "SECURITY.md", "CODE_OF_CONDUCT.md", ".github/dependabot.yml"}

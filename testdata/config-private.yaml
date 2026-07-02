@@ -1,0 +1,26 @@
+version: 1
+visibility: private
+merge_strategy:
+  allow_squash: true
+  allow_merge: false
+  allow_rebase: false
+delete_branch_on_merge: true
+rulesets:
+  - name: Protect main
+    target: branch
+    enforcement: active
+    branches:
+      - ~DEFAULT_BRANCH~
+    required_reviews: 2
+    dismiss_stale_reviews: true
+    prevent_deletion: true
+    prevent_force_push: true
+    allowed_merge_methods:
+      - squash
+    admin_bypass: true
+security:
+  vulnerability_alerts: true
+  automated_security_fixes: true
+  secret_scanning: false
+  secret_scanning_push_protection: false
+  dependabot_config: true

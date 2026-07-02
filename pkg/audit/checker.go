@@ -45,7 +45,7 @@ func RunAudit(
 	})
 
 	// 2. Default branch protected
-	branchProtected := bp != nil || len(rulesets) > 0
+	branchProtected := bp != nil || hasActiveRulesets(rulesets)
 	checks = append(checks, CheckResult{
 		Name:     "Branch protection",
 		Passed:   branchProtected,
@@ -238,6 +238,15 @@ func hasDeletionRule(rulesets []github.Ruleset) bool {
 			if r.Type == "deletion" {
 				return true
 			}
+		}
+	}
+	return false
+}
+
+func hasActiveRulesets(rulesets []github.Ruleset) bool {
+	for _, rs := range rulesets {
+		if rs.Enforcement != "disabled" {
+			return true
 		}
 	}
 	return false

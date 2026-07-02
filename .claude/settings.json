@@ -1,0 +1,77 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git fetch:*)",
+      "Bash(git pull:*)",
+      "Bash(git checkout -b:*)",
+      "Bash(git switch -c:*)",
+      "Bash(git branch:*)",
+      "Bash(git cherry-pick:*)",
+
+      "Bash(go build:*)",
+      "Bash(go run:*)",
+      "Bash(go test:*)",
+      "Bash(go vet:*)",
+      "Bash(go mod tidy:*)",
+      "Bash(go fmt:*)",
+
+      "Bash(ls:*)",
+      "Bash(find:*)",
+      "Bash(rg:*)",
+      "Bash(grep:*)",
+      "Bash(mkdir:*)",
+
+      "Read(cmd/**)",
+      "Read(pkg/**)",
+      "Read(main.go)",
+      "Read(go.mod)",
+      "Read(go.sum)",
+      "Read(README.md)",
+      "Read(CLAUDE.md)",
+      "Write(cmd/**)",
+      "Write(pkg/**)",
+      "Edit(cmd/**)",
+      "Edit(pkg/**)",
+
+      "WebFetch(domain:pkg.go.dev)",
+      "WebFetch(domain:docs.github.com)"
+    ],
+    "ask": [
+      "Bash(rm:*)",
+      "Bash(mv:*)",
+      "Bash(cp:*)",
+      "Bash(sed:*)",
+
+      "Bash(git stash:*)",
+      "Bash(git reset:*)",
+      "Bash(git revert:*)",
+      "Bash(git rebase:*)",
+      "Bash(git merge:*)",
+
+      "Write(main.go)",
+      "Edit(main.go)",
+      "Write(go.mod)",
+      "Edit(go.mod)",
+
+      "Write(CLAUDE.md)",
+      "Edit(CLAUDE.md)",
+      "Write(README.md)",
+      "Edit(README.md)",
+
+      "Write(**/.gitignore)",
+      "Edit(**/.gitignore)"
+    ],
+    "deny": [
+      "Read(.env)",
+      "Read(.env.*)",
+      "Read(**/secrets*.json)",
+
+      "Bash(git push:*)",
+      "Bash(git push --force:*)",
+      "Bash(git push -f:*)"
+    ]
+  }
+}
